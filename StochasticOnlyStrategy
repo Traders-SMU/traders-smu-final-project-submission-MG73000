@@ -1,0 +1,68 @@
+from AlgorithmImports import *
+
+class StochasticOnlyStrategy(QCAlgorithm):
+    def Initialize(self):
+        self.SetStartDate(2023, 1, 1)
+        self.SetEndDate(2025, 1, 1)
+        self.SetCash(100000)
+
+        # === Choose your asset here! ===
+        self.asset_type = "Equity"  # Options: "Forex", "Equity", "Crypto", "Future"
+        self.ticker = "RTX"     # Example: "AAPL" for stocks, "EURUSD" for forex
+        
+        # === Load the asset based on type ===
+        if self.asset_type == "Forex":
+            self.symbol = self.AddForex(self.ticker, Resolution.Daily, Market.Oanda).Symbol
+        elif self.asset_type == "Equity":
+            self.symbol = self.AddEquity(self.ticker, Resolution.Daily).Symbol
+        elif self.asset_type == "Crypto":
+            self.symbol = self.AddCrypto(self.ticker, Resolution.Daily, Market.GDAX).Symbol
+        elif self.asset_type == "Future":
+            future = self.AddFuture(self.ticker, Resolution.Daily)
+            self.symbol = future.Symbol
+        else:
+            raise ValueError("Unsupported asset type!")
+
+        # === Indicators ===
+        self.stoch = Stochastic(14, 3, 3)
+        self.RegisterIndicator(self.symbol, self.stoch, Resolution.Daily)
+
+        # === Strategy Parameters ===
+        self.stoch_oversold = 20
+        self.stoch_overbought = 80
+        self.stoch_trades = 0
+
+        self.Schedule.On(
+            self.DateRules.MonthEnd(),
+            self.TimeRules.At(9, 30),
+            Action(self.LogStatus)
+        )
+    
+    def OnData(self, data):
+        if not self.stoch.IsReady:
+            return
+        
+        holdings = self.Portfolio[self.symbol].Quantity
+        k = self.stoch.StochK.Current.Value
+        d = self.stoch.StochD.Current.Value
+        
+        if k < self.stoch_oversold and d < self.stoch_oversold and holdings <= 0:
+            self.SetHoldings(self.symbol, 0.5)
+            self.stoch_trades += 1
+            self.Debug(f"Stochastic Buy Signal - K: {k}, D: {d}")
+            
+        elif k > self.stoch_overbought and d > self.stoch_overbought and holdings > 0:
+            self.Liquidate(self.symbol)
+            self.stoch_trades += 1
+            self.Debug(f"Stochastic Sell Signal - K: {k}, D: {d}")
+    
+    def LogStatus(self):
+        self.Log(f"Stochastic Strategy - Trades: {self.stoch_trades}")
+        self.Log(f"Total Profit: {self.Portfolio.TotalProfit}")
+        self.Log(f"Portfolio Value: {self.Portfolio.TotalPortfolioValue}")
+    
+    def OnEndOfAlgorithm(self):
+        self.Log("=== Stochastic Strategy Final Results ===")
+        self.Log(f"Total Trades: {self.stoch_trades}")
+        self.Log(f"Final Portfolio Value: ${self.Portfolio.TotalPortfolioValue}")
+       

@@ -1,0 +1,66 @@
+from AlgorithmImports import *
+
+class RSIOnlyStrategy(QCAlgorithm):
+    def Initialize(self):
+        self.SetStartDate(2023, 1, 1)
+        self.SetEndDate(2025, 1, 1)
+        self.SetCash(100000)
+
+        # === Choose your asset here! ===
+        self.asset_type = "Equity"  # Options: "Forex", "Equity", "Crypto", "Future"
+        self.ticker = "AMZN"     # Example: "AAPL" for stocks, "EURUSD" for forex
+
+        # === Load the asset based on type ===
+        if self.asset_type == "Forex":
+            self.symbol = self.AddForex(self.ticker, Resolution.Daily, Market.Oanda).Symbol
+        elif self.asset_type == "Equity":
+            self.symbol = self.AddEquity(self.ticker, Resolution.Daily).Symbol
+        elif self.asset_type == "Crypto":
+            self.symbol = self.AddCrypto(self.ticker, Resolution.Daily, Market.GDAX).Symbol
+        elif self.asset_type == "Future":
+            future = self.AddFuture(self.ticker, Resolution.Daily)
+            self.symbol = future.Symbol
+        else:
+            raise ValueError("Unsupported asset type!")
+
+        # === Indicators ===
+        self.rsi = self.RSI(self.symbol, 14, MovingAverageType.Simple, Resolution.Daily)
+
+        # === Strategy Parameters ===
+        self.rsi_oversold = 30
+        self.rsi_overbought = 70
+        self.rsi_trades = 0
+
+        self.Schedule.On(
+            self.DateRules.MonthEnd(),
+            self.TimeRules.At(9, 30),
+            Action(self.LogStatus)
+        )
+    
+    def OnData(self, data):
+        if not self.rsi.IsReady:
+            return
+        
+        holdings = self.Portfolio[self.symbol].Quantity
+        rsi_value = self.rsi.Current.Value
+
+        if rsi_value < self.rsi_oversold and holdings <= 0:
+            self.SetHoldings(self.symbol, 0.5)
+            self.rsi_trades += 1
+            self.Debug(f"RSI Buy Signal - RSI: {rsi_value}")
+
+        elif rsi_value > self.rsi_overbought and holdings > 0:
+            self.Liquidate(self.symbol)
+            self.rsi_trades += 1
+            self.Debug(f"RSI Sell Signal - RSI: {rsi_value}")
+    
+    def LogStatus(self):
+        self.Log(f"RSI Strategy - Trades: {self.rsi_trades}")
+        self.Log(f"Total Profit: {self.Portfolio.TotalProfit}")
+        self.Log(f"Portfolio Value: {self.Portfolio.TotalPortfolioValue}")
+    
+    def OnEndOfAlgorithm(self):
+        self.Log("=== RSI Strategy Final Results ===")
+        self.Log(f"Total Trades: {self.rsi_trades}")
+        self.Log(f"Final Portfolio Value: ${self.Portfolio.TotalPortfolioValue}")
+       
